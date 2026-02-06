@@ -81,3 +81,27 @@ type Config struct {
 	// method (New) will panic to prevent runtime inconsistencies.
 	Driver Driver
 }
+
+// Chain is a helper that wraps a specific handler with a list of middlewares.
+//
+// It allows applying middlewares to a single endpoint without creating a Group.
+// The middlewares are applied in the order they are passed (first matches first).
+//
+// Usage:
+//
+//	server.GET("/private", transwarp.Chain(myHandler, AuthMW, LoggingMW))
+func Chain(h http.HandlerFunc, mws ...Middleware) http.HandlerFunc {
+	// If no middlewares, return original handler
+	if len(mws) == 0 {
+		return h
+	}
+
+	// Wrap the handler with middlewares in reverse order
+	// so the first passed middleware is the first to execute.
+	var final http.Handler = h
+	for i := len(mws) - 1; i >= 0; i-- {
+		final = mws[i](final)
+	}
+
+	return final.ServeHTTP
+}

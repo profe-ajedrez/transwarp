@@ -250,14 +250,18 @@ func setupUniversalRoutes(r internal.Router) {
 	// Simple Echo Route
 	api.GET("/echo/:data", func(w http.ResponseWriter, req *http.Request) {
 		data := r.Param(req, "data")
-		w.Write([]byte(data))
+		if _, err := w.Write([]byte(data)); err != nil {
+			panic(err)
+		}
 	})
 
 	// Query Params Test
 	api.GET("/search", func(w http.ResponseWriter, req *http.Request) {
 		q := req.URL.Query().Get("q")
 		page := req.URL.Query().Get("page")
-		fmt.Fprintf(w, "q:%s|page:%s", q, page)
+		if _, err := fmt.Fprintf(w, "q:%s|page:%s", q, page); err != nil {
+			panic(err)
+		}
 	})
 
 	// JSON Body Test
@@ -273,7 +277,9 @@ func setupUniversalRoutes(r internal.Router) {
 		}
 		u.Role = "super_" + u.Role
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(u)
+		if err := json.NewEncoder(w).Encode(u); err != nil {
+			panic(err)
+		}
 	})
 
 	// Headers Auth Test
@@ -283,19 +289,33 @@ func setupUniversalRoutes(r internal.Router) {
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte("granted"))
+		if _, err := w.Write([]byte("granted")); err != nil {
+			panic(err)
+		}
 	})
 
 	// Groups & Params
 	admin := api.Group("/admin")
-	admin.GET("/settings", func(w http.ResponseWriter, req *http.Request) { w.Write([]byte("static_settings")) })
-	admin.GET("/:any", func(w http.ResponseWriter, req *http.Request) { w.Write([]byte("dynamic_any")) })
+	admin.GET("/settings", func(w http.ResponseWriter, req *http.Request) {
+		if _, err := w.Write([]byte("static_settings")); err != nil {
+			panic(err)
+		}
+
+	})
+	admin.GET("/:any", func(w http.ResponseWriter, req *http.Request) {
+		if _, err := w.Write([]byte("dynamic_any")); err != nil {
+			panic(err)
+		}
+	})
 
 	shop := api.Group("/shop")
 	shop.GET("/category/:cat/item/:id", func(w http.ResponseWriter, req *http.Request) {
 		cat := r.Param(req, "cat")
 		id := r.Param(req, "id")
-		fmt.Fprintf(w, "cat:%s|id:%s", cat, id)
+		if _, err := fmt.Fprintf(w, "cat:%s|id:%s", cat, id); err != nil {
+			panic(err)
+		}
+
 	})
 
 	api.PUT("/update", func(w http.ResponseWriter, req *http.Request) {
@@ -314,7 +334,9 @@ func setupUniversalRoutes(r internal.Router) {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if req.URL.Query().Get("admin") != "true" {
 				w.WriteHeader(http.StatusForbidden)
-				w.Write([]byte("bloqueado"))
+				if _, err := w.Write([]byte("bloqueado")); err != nil {
+					panic(err)
+				}
 				// RETURN here is crucial. In Gin/Fiber adapters, this must trigger an abort.
 				return
 			}
@@ -324,7 +346,9 @@ func setupUniversalRoutes(r internal.Router) {
 
 	protected.GET("/dashboard", func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("dashboard_data"))
+		if _, err := w.Write([]byte("dashboard_data")); err != nil {
+			panic(err)
+		}
 	})
 
 	// --- Collision Test (Static vs Dynamic) ---
@@ -333,14 +357,19 @@ func setupUniversalRoutes(r internal.Router) {
 	// Static route (Should have priority)
 	files.GET("/config", func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("file_config"))
+		if _, err := w.Write([]byte("file_config")); err != nil {
+			panic(err)
+		}
 	})
 
 	// Dynamic route (Conflicting with /config)
 	files.GET("/:name", func(w http.ResponseWriter, req *http.Request) {
 		name := r.Param(req, "name")
 		w.WriteHeader(http.StatusCreated) // Expecting 201
-		fmt.Fprintf(w, "created_%s", name)
+		if _, err := fmt.Fprintf(w, "created_%s", name); err != nil {
+			panic(err)
+		}
+
 	})
 }
 
@@ -355,7 +384,11 @@ func executeUniversalTests(t *testing.T, executor Executor) {
 
 	readBody := func(res *http.Response) string {
 		b, _ := io.ReadAll(res.Body)
-		res.Body.Close()
+		if err := res.Body.Close(); err != nil {
+			t.Log(err)
+			t.FailNow()
+		}
+
 		return string(b)
 	}
 
@@ -388,7 +421,10 @@ func executeUniversalTests(t *testing.T, executor Executor) {
 		}
 
 		var resMap map[string]string
-		json.NewDecoder(resp.Body).Decode(&resMap)
+		if err := json.NewDecoder(resp.Body).Decode(&resMap); err != nil {
+			t.Log(err)
+			t.FailNow()
+		}
 
 		if resMap["role"] != "super_admin" {
 			t.Errorf("JSON logic failed. Got role: %s", resMap["role"])
