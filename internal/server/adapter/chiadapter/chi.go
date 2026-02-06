@@ -144,3 +144,7 @@ func (a *ChiAdapter) Handle(pattern string, h http.Handler) {
 func (a *ChiAdapter) HandleFunc(pattern string, h http.HandlerFunc) {
 	a.Handle(pattern, h)
 }
+
+func (a *ChiAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	a.Router.ServeHTTP(w, r)
+}

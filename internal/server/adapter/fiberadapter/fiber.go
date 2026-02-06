@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/gofiber/fiber/v3"
@@ -249,4 +250,38 @@ func (w *fiberWriter) Write(b []byte) (int, error) {
 
 func (w *fiberWriter) WriteHeader(statusCode int) {
 	w.status = statusCode
+}
+
+func (a *FiberAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// 1. Usamos el método .Test() de Fiber como puente.
+	//    Recibe: *http.Request (estándar)
+	//    Devuelve: *http.Response (estándar)
+
+	resp, err := a.App.Test(r, fiber.TestConfig{})
+	if err != nil {
+		http.Error(w, "Fiber Adapter Error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			log.Warn(err)
+		}
+	}()
+
+	// 2. Copiamos los Headers de la respuesta de Fiber al ResponseWriter estándar
+	for k, vv := range resp.Header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+
+	// 3. Establecemos el Status Code
+	w.WriteHeader(resp.StatusCode)
+
+	// 4. Copiamos el cuerpo de la respuesta
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		// Si falla la escritura aquí, poco podemos hacer ya que los headers se enviaron
+		return
+	}
 }

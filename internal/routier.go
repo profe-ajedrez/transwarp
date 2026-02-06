@@ -6,6 +6,7 @@ import (
 
 // Router es la interfaz común para cualquier framework web
 type Router interface {
+	http.Handler
 	GET(path string, handler http.HandlerFunc)
 	POST(path string, handler http.HandlerFunc)
 	PUT(path string, handler http.HandlerFunc)

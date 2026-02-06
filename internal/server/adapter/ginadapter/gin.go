@@ -20,6 +20,8 @@ type ginCtxKey string
 // from within standard http.Handlers that otherwise wouldn't know they are running inside Gin.
 const ginParamsKey ginCtxKey = "gin_params"
 
+var _ internal.Router = &GinAdapter{}
+
 // GinAdapter implements the Transwarp interface for the Gin Gonic framework.
 //
 // It wraps Gin's specific routing and middleware capabilities to expose
@@ -177,4 +179,14 @@ func (a *GinAdapter) HandleFunc(pattern string, h http.HandlerFunc) {
 
 	// Any registra GET, POST, PUT, PATCH, HEAD, OPTIONS, DELETE, CONNECT, TRACE
 	a.Router.Any(pattern, fn)
+}
+
+func (a *GinAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Intentamos convertir la interfaz Router al Engine concreto
+	if engine, ok := a.Router.(*gin.Engine); ok {
+		engine.ServeHTTP(w, r)
+	} else {
+		// Fallback por si alguien intenta montar un 'Group' en lugar del Engine principal
+		http.Error(w, "Transwarp: Gin adapter can only ServeHTTP from root Engine", http.StatusInternalServerError)
+	}
 }

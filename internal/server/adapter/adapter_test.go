@@ -59,7 +59,7 @@ func TestAllAdapters(t *testing.T) {
 		setupUniversalRoutes(r)
 
 		// Gin implements http.Handler, so we can use httptest.ResponseRecorder directly.
-		executeUniversalTests(t, func(req *http.Request) *http.Response {
+		executeUniversalTests(t, r, func(req *http.Request) *http.Response {
 			rec := httptest.NewRecorder()
 			g.ServeHTTP(rec, req)
 			return rec.Result()
@@ -75,7 +75,7 @@ func TestAllAdapters(t *testing.T) {
 		setupUniversalRoutes(r)
 
 		// Echo implements http.Handler.
-		executeUniversalTests(t, func(req *http.Request) *http.Response {
+		executeUniversalTests(t, r, func(req *http.Request) *http.Response {
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
 			return rec.Result()
@@ -99,7 +99,7 @@ func TestAllAdapters(t *testing.T) {
 
 		defer func() { _ = app.Shutdown() }()
 
-		executeUniversalTests(t, func(req *http.Request) *http.Response {
+		executeUniversalTests(t, r, func(req *http.Request) *http.Response {
 			// Transform the request URL to point to the local TCP port
 			u := req.URL
 			u.Scheme = "http"
@@ -129,7 +129,7 @@ func TestAllAdapters(t *testing.T) {
 		setupUniversalRoutes(r)
 
 		// Chi implements http.Handler.
-		executeUniversalTests(t, func(req *http.Request) *http.Response {
+		executeUniversalTests(t, r, func(req *http.Request) *http.Response {
 			rec := httptest.NewRecorder()
 			c.ServeHTTP(rec, req)
 			return rec.Result()
@@ -144,7 +144,7 @@ func TestAllAdapters(t *testing.T) {
 		m := adapter.NewMockRouter()
 		setupUniversalRoutes(m)
 
-		executeUniversalTests(t, func(req *http.Request) *http.Response {
+		executeUniversalTests(t, m, func(req *http.Request) *http.Response {
 			path := req.URL.Path
 			method := req.Method
 			var key string
@@ -389,10 +389,21 @@ func setupUniversalRoutes(r internal.Router) {
 			panic(err)
 		}
 	})
+
+	r.GET("/compliance/servehttp", func(w http.ResponseWriter, req *http.Request) {
+		// 1. Seteamos un Header personalizado
+		w.Header().Set("X-Transwarp-Status", "Operational")
+		// 2. Usamos un status code poco común (Teapot 418) para asegurar que no es un 200 default
+		w.WriteHeader(http.StatusTeapot)
+		// 3. Escribimos cuerpo
+		if _, err := w.Write([]byte("ServeHTTP_Works")); err != nil {
+			panic(err)
+		}
+	})
 }
 
 // executeUniversalTests runs the battery of assertions using the provided Executor.
-func executeUniversalTests(t *testing.T, executor Executor) {
+func executeUniversalTests(t *testing.T, r internal.Router, executor Executor) {
 
 	// Helper to create simple requests
 	simpleReq := func(method, path string) *http.Request {
@@ -566,6 +577,39 @@ func executeUniversalTests(t *testing.T, executor Executor) {
 			if b := readBody(resp); b != "universal_"+m {
 				t.Errorf("Body incorrecto para %s. Esperaba 'universal_%s', obtuvo '%s'", m, m, b)
 			}
+		}
+	})
+
+	t.Run("Interface_ServeHTTP_Compliance", func(t *testing.T) {
+		// 1. Verificamos que el router cumpla la interfaz http.Handler
+		// Esto fallará si olvidaste agregar ServeHTTP a alguno de los adapters
+		handler, ok := r.(http.Handler)
+		if !ok {
+			t.Fatal("El adaptador NO implementa http.Handler")
+		}
+
+		// 2. Creamos una petición estándar de Go (sin trucos)
+		req := httptest.NewRequest("GET", "/compliance/servehttp", nil)
+		rec := httptest.NewRecorder()
+
+		// 3. Ejecutamos directamente contra el adaptador
+		handler.ServeHTTP(rec, req)
+
+		// 4. Aserciones
+
+		// A. Verificar Status Code (Debe ser 418 Teapot)
+		if rec.Code != http.StatusTeapot {
+			t.Errorf("ServeHTTP Status incorrecto. Esperaba %d, obtuvo %d", http.StatusTeapot, rec.Code)
+		}
+
+		// B. Verificar Headers (Crucial para Fiber/Fasthttp bridge)
+		if val := rec.Header().Get("X-Transwarp-Status"); val != "Operational" {
+			t.Errorf("ServeHTTP Header perdido. Esperaba 'Operational', obtuvo '%s'", val)
+		}
+
+		// C. Verificar Body
+		if rec.Body.String() != "ServeHTTP_Works" {
+			t.Errorf("ServeHTTP Body incorrecto. Obtuvo '%s'", rec.Body.String())
 		}
 	})
 }

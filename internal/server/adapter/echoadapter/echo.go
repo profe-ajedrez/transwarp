@@ -9,6 +9,8 @@ import (
 	"github.com/profe-ajedrez/transwarp/internal"
 )
 
+var _ internal.Router = &EchoAdapter{}
+
 // EchoAdapter is the implementation of the Transwarp interface for the Echo framework.
 //
 // It serves as a bridge, translating standard net/http calls into Echo's specific
@@ -157,4 +159,8 @@ func (a *EchoAdapter) HandleFunc(pattern string, h http.HandlerFunc) {
 
 	// Registra para todos los métodos
 	a.Instance.Any(pattern, fn)
+}
+
+func (a *EchoAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	a.Instance.ServeHTTP(w, r)
 }
