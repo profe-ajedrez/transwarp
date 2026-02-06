@@ -15,4 +15,6 @@ type Router interface {
 	Param(r *http.Request, key string) string
 	Group(prefix string) Router
 	Serve(port string) error
+	Handle(pattern string, h http.Handler)
+	HandleFunc(pattern string, h http.HandlerFunc)
 }

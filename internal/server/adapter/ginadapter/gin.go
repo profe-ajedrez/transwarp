@@ -159,3 +159,22 @@ func (a *GinAdapter) Serve(port string) error {
 	// Fallback if we are somehow trying to serve a Group directly
 	return http.ListenAndServe(port, nil)
 }
+
+// Implementación de Handle (acepta interface http.Handler)
+func (a *GinAdapter) Handle(pattern string, h http.Handler) {
+	a.HandleFunc(pattern, h.ServeHTTP)
+}
+
+// Implementación de HandleFunc (acepta func)
+func (a *GinAdapter) HandleFunc(pattern string, h http.HandlerFunc) {
+	// Reutilizamos la lógica interna de wrapping 'fn' que ya tienes en 'handle'
+	// pero llamamos a a.Router.Any en lugar de a.Router.Handle
+
+	fn := func(c *gin.Context) {
+		ctx := context.WithValue(c.Request.Context(), ginParamsKey, c)
+		h(c.Writer, c.Request.WithContext(ctx))
+	}
+
+	// Any registra GET, POST, PUT, PATCH, HEAD, OPTIONS, DELETE, CONNECT, TRACE
+	a.Router.Any(pattern, fn)
+}

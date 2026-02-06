@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/profe-ajedrez/transwarp/internal"
 )
@@ -81,4 +82,71 @@ func (m *MockRouter) Param(r *http.Request, key string) string {
 		return params[key]
 	}
 	return ""
+}
+
+// Lista de métodos soportados por el Mock
+var mockMethods = []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+
+func (m *MockRouter) Handle(pattern string, h http.Handler) {
+	m.HandleFunc(pattern, h.ServeHTTP)
+}
+
+func (m *MockRouter) HandleFunc(pattern string, h http.HandlerFunc) {
+	// Registramos la ruta para cada verbo HTTP
+	for _, method := range mockMethods {
+		// Usamos el método register interno que creamos antes
+		// para que aplique middlewares y prefijos correctamente
+		m.register(method, pattern, h)
+	}
+}
+
+// ServeHTTP permite que el MockRouter cumpla con la interfaz http.Handler.
+// Esto es vital para usarlo con httptest.NewRecorder() y en benchmarks.
+func (m *MockRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// 1. Construimos la clave de búsqueda: "METODO /ruta"
+	// Nota: Esta es una implementación simplificada para tests.
+	// No maneja patrones complejos como :params en la búsqueda (matching),
+	// solo coincidencia exacta de rutas registradas o la lógica específica que definas.
+
+	// Si tu Mock soporta parámetros (ej. /users/:id), aquí deberías tener
+	// una lógica básica para resolverlos. Para benchmarks exactos,
+	// asumimos que registraste la ruta exacta o tienes una lógica de "best match".
+
+	key := r.Method + " " + r.URL.Path
+
+	// 2. Buscamos el handler
+	if handler, exists := m.Handlers[key]; exists {
+		// Ejecutamos el handler encontrado
+		handler(w, r)
+		return
+	}
+
+	// 3. Fallback: Intentar buscar rutas con parámetros (Lógica simple para Mock)
+	// Si no encuentras la ruta exacta, iteras para ver si alguna coincide con patrón
+	for routeKey, h := range m.Handlers {
+		// routeKey es ej: "GET /users/:id"
+		// r.Method + r.URL.Path es ej: "GET /users/123"
+
+		// Separamos método y path
+		parts := strings.SplitN(routeKey, " ", 2)
+		if len(parts) != 2 || parts[0] != r.Method {
+			continue
+		}
+
+		pattern := parts[1] // "/users/:id"
+
+		// Chequeo muy básico de prefijo para simular match dinámico
+		// (Para un mock robusto, podrías usar regex, pero esto suele bastar para tests)
+		if strings.Contains(pattern, ":") {
+			base := strings.Split(pattern, ":")[0] // "/users/"
+			if strings.HasPrefix(r.URL.Path, base) {
+				// Encontramos un candidato "parecido"
+				h(w, r)
+				return
+			}
+		}
+	}
+
+	// 4. Si no existe, 404
+	http.NotFound(w, r)
 }

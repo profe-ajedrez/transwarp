@@ -203,6 +203,16 @@ func TestAllAdapters(t *testing.T) {
 				key = "GET /files/:name"
 				currentParams["name"] = strings.TrimPrefix(path, "/files/")
 
+			case strings.HasPrefix(path, "/files/"):
+				key = "GET /files/:name"
+				currentParams["name"] = strings.TrimPrefix(path, "/files/")
+
+			// --- NUEVO CASO PARA MOCK ---
+			// Si la ruta es /universal, construimos la key usando el método actual
+			// Porque HandleFunc registró "GET /universal", "POST /universal", etc.
+			case path == "/universal":
+				key = method + " /universal"
+
 			// Default: Exact path match fallback
 			default:
 				key = method + " " + path
@@ -371,6 +381,14 @@ func setupUniversalRoutes(r internal.Router) {
 		}
 
 	})
+
+	r.HandleFunc("/universal", func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Devolvemos el método que recibió para verificar que funciona dinámicamente
+		if _, err := w.Write([]byte("universal_" + req.Method)); err != nil {
+			panic(err)
+		}
+	})
 }
 
 // executeUniversalTests runs the battery of assertions using the provided Executor.
@@ -529,6 +547,25 @@ func executeUniversalTests(t *testing.T, executor Executor) {
 		}
 		if b := readBody(respFile); b != "created_document.pdf" {
 			t.Errorf("Dynamic param failed: %s", b)
+		}
+	})
+
+	t.Run("Handle_All_Methods", func(t *testing.T) {
+		// Lista de métodos que esperamos que soporten todos los adaptadores
+		methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
+
+		for _, m := range methods {
+			req := simpleReq(m, "/universal")
+			resp := executor(req)
+
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("Handle All falló en método %s. Esperaba 200, obtuvo %d", m, resp.StatusCode)
+			}
+
+			// Verificamos el body (HEAD suele no tener body, por eso lo excluimos de la lista simple arriba)
+			if b := readBody(resp); b != "universal_"+m {
+				t.Errorf("Body incorrecto para %s. Esperaba 'universal_%s', obtuvo '%s'", m, m, b)
+			}
 		}
 	})
 }

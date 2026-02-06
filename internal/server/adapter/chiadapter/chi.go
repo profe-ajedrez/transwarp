@@ -127,3 +127,20 @@ func (a *ChiAdapter) Param(r *http.Request, key string) string {
 func (a *ChiAdapter) Serve(port string) error {
 	return http.ListenAndServe(port, a.Router)
 }
+
+var allMethods = []string{
+	http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete,
+	http.MethodPatch, http.MethodHead, http.MethodOptions,
+}
+
+func (a *ChiAdapter) Handle(pattern string, h http.Handler) {
+	// Chi nativamente soporta Handle, pero para un "Match All Methods"
+	// es mejor iterar para garantizar consistencia con Gin/Echo
+	for _, method := range allMethods {
+		a.Router.Method(method, pattern, h)
+	}
+}
+
+func (a *ChiAdapter) HandleFunc(pattern string, h http.HandlerFunc) {
+	a.Handle(pattern, h)
+}

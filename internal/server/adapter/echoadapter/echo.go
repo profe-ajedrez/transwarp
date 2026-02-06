@@ -141,3 +141,20 @@ func (a *EchoAdapter) Use(mw internal.Middleware) {
 func (a *EchoAdapter) Serve(port string) error {
 	return a.Instance.Start(port)
 }
+
+func (a *EchoAdapter) Handle(pattern string, h http.Handler) {
+	a.HandleFunc(pattern, h.ServeHTTP)
+}
+
+func (a *EchoAdapter) HandleFunc(pattern string, h http.HandlerFunc) {
+	// Wrapper de Echo a http.HandlerFunc
+	fn := func(c *echo.Context) error {
+		req := c.Request()
+		ctx := context.WithValue(req.Context(), paramsKey, c)
+		h(c.Response(), req.WithContext(ctx))
+		return nil
+	}
+
+	// Registra para todos los métodos
+	a.Instance.Any(pattern, fn)
+}
