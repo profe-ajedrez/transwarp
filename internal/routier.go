@@ -1,0 +1,18 @@
+package internal
+
+import (
+	"net/http"
+)
+
+// Router es la interfaz común para cualquier framework web
+type Router interface {
+	GET(path string, handler http.HandlerFunc)
+	POST(path string, handler http.HandlerFunc)
+	PUT(path string, handler http.HandlerFunc)
+	HEAD(path string, handler http.HandlerFunc)
+	DELETE(path string, handler http.HandlerFunc)
+	Use(mw Middleware)
+	Param(r *http.Request, key string) string
+	Group(prefix string) Router
+	Serve(port string) error
+}
