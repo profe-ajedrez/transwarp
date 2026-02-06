@@ -1,7 +1,6 @@
 package fiberadapter
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v3/log"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/profe-ajedrez/transwarp/internal"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
 // fiberCtxKey is a private type used for storing Fiber path parameters
@@ -173,48 +173,19 @@ func (a *FiberAdapter) Serve(port string) error {
 }
 
 func (a *FiberAdapter) Handle(pattern string, h http.Handler) {
-	a.HandleFunc(pattern, h.ServeHTTP)
-}
+	// Creamos el handler de fasthttp (compatible con WebSockets)
+	fiberHandler := fasthttpadaptor.NewFastHTTPHandler(h)
 
-// Implementación de HandleFunc (lógica completa)
-func (a *FiberAdapter) HandleFunc(pattern string, h http.HandlerFunc) {
-	// Usamos 'All' para que responda a GET, POST, PUT, DELETE, etc.
 	a.Router.All(pattern, func(c fiber.Ctx) error {
-
-		// --- 1. ADAPTAR REQUEST (Fiber -> net/http) ---
-
-		// Reconstruimos el http.Request estándar basándonos en los datos de Fiber/Fasthttp
-		path := c.Path()
-		// Ojo: c.Body() devuelve []byte, lo convertimos a Reader
-		r, err := http.NewRequest(c.Method(), path, bytes.NewReader(c.Body()))
-		if err != nil {
-			return c.Status(500).SendString("Internal Adapter Error")
-		}
-
-		// Copiamos los Headers de Fiber al Request estándar
-		// VisitAll es la forma más rápida en Fasthttp de iterar headers
-		c.Request().Header.VisitAll(func(key, value []byte) {
-			r.Header.Add(string(key), string(value))
-		})
-
-		// Inyectamos el contexto original de Fiber (para que transwarp.Param funcione)
-		ctx := context.WithValue(r.Context(), fiberParamsKey, c)
-
-		// --- 2. PREPARAR WRITER (net/http -> Fiber) ---
-
-		// Creamos nuestro traductor
-		writer := &fiberWriter{
-			c:      c,
-			header: make(http.Header),
-		}
-
-		// --- 3. EJECUTAR HANDLER ---
-		h(writer, r.WithContext(ctx))
-
-		// En Fiber no necesitamos devolver nada explícito si ya escribimos en 'c'
-		// dentro del fiberWriter.Write()
+		// CORRECCIÓN: Usamos c.RequestCtx() en Fiber v3
+		// Esto devuelve el *fasthttp.RequestCtx subyacente
+		fiberHandler(c.RequestCtx())
 		return nil
 	})
+}
+
+func (a *FiberAdapter) HandleFunc(pattern string, h http.HandlerFunc) {
+	a.Handle(pattern, h)
 }
 
 // fiberWriter implementa http.ResponseWriter pero escribe en fiber.Ctx

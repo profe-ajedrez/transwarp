@@ -41,6 +41,8 @@ const (
 	// This driver is intended for unit testing logic without spinning up
 	// a real TCP network listener. It requires no specific build tags.
 	DriverMock Driver = "mock"
+
+	DriverNative Driver = "native"
 )
 
 // Middleware defines the standard function signature for HTTP interceptors.

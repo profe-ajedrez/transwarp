@@ -6,7 +6,7 @@
 
 **Transwarp** is a high-performance, abstraction layer for Go web servers. It allows you to write your HTTP logic using standard `net/http` handlers and run it on top of the industry's fastest web frameworks (**Fiber**, **Echo**, **Gin**, or **Chi**) without changing a single line of your business code.
 
-Transwarp uses **Go Build Tags** to ensure zero overhead. If you compile for Gin, the Fiber dependencies are not included in your binary, and vice versa.
+Transwarp uses **Go Build Tags** to ensure minimal overhead. If you compile for Gin, the Fiber dependencies are not included in your binary, and vice versa.
 
 ## 🌟 Key Features
 
@@ -78,22 +78,28 @@ $ ./app
 * To use Gin (Most Popular):
 
 ```bash
-go build -tags gin -o app main.go
-./app
+$ go build -tags gin -o app main.go
+$ ./app
 ```
 
 * To use Echo (v5):
 
 ```bash
-go build -tags echo -o app main.go
-./app
+$ go build -tags echo -o app main.go
+$ ./app
 ```
 
 * To use Chi (Lightweight):
 
 ```bash
-go build -tags chi -o app main.go
-./app
+$ go build -tags chi -o app main.go
+$ ./app
+```
+
+* To use Native Go 1.22+:
+
+```bash
+$ go build -tags mux -o app main.go
 ```
 
 
@@ -116,6 +122,17 @@ v1 := api.Group("/v1")
 v1.GET("/status", statusHandler) // -> /api/v1/status
 ```
 
+#### 1.1 Wildcards (Catch-All)
+
+While named parameters (:id) are standardized, defining "catch-all" routes (e.g., for serving static assets, proxying, or SPA fallbacks) currently varies slightly depending on the underlying driver you choose.
+
+Driver	Syntax	Example:
+
+```
+Gin	/*any	/files/*any
+Native (Mux)	/ (Trailing Slash)	/files/
+Fiber/Echo/Chi	/*	/files/*
+```
 
 ### 2. Accessing Parameters
 
@@ -165,13 +182,15 @@ admin.GET("/dashboard", dashboardHandler)
 
 ### 🛠 Supported Drivers
 
-```
-Driver	Build Tag	Description
-Fiber	fiber	Uses Fiber v3. Built on fasthttp. Fastest option. Transwarp handles the complex context bridging automatically.
-Echo	echo	Uses Echo v5. Robust and performant.
-Gin	gin	Uses Gin Gonic. automatically sets ReleaseMode for production builds.
-Chi	chi	Uses go-chi/chi v5. Native net/http compatibility.
-```
+
+| Adapter | Build Tag | Description |
+|---|---|---|
+|Native| native | Uses Go 1.22+ standard library http.ServeMux.| 
+|Fiber|	fiber	| Uses Fiber v3. Built on fasthttp. Transwarp handles the complex context bridging automatically.|
+|Gin|	gin	| Uses Gin Gonic. Automatically sets ReleaseMode for production builds.|
+|Echo| echo | Uses Echo v5.|
+|Chi| chi | Uses go-chi/chi v5. Native net/http compatibility.|
+
 
 
 ### 🧪 Testing (The Mock Driver)
@@ -221,13 +240,14 @@ func TestMyAPI(t *testing.T) {
 
 Fiber is based on fasthttp, which recycles request contexts for performance. Transwarp performs a deep copy of parameters and headers when bridging to net/http to ensure your handlers are safe to use, even if you perform asynchronous operations.
 
+Transwarp benchmarks using Fiber appear slower in synthetic net/http tests due to the required net/http <-> fasthttp translation layer used for compatibility testing. In native execution (server.Serve), Fiber retains its industry-leading performance
+
 * Gin & Abort
 
 In Gin, simply returning from a middleware doesn't stop the chain; you must call Abort(). The Transwarp Gin Adapter detects if your standard middleware did not call next() and calls Abort() for you automatically.
 
 
 
-📄 License
+##📄 License
 
 MIT License. See LICENSE for more information.
-

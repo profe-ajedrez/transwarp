@@ -36,6 +36,6 @@ func init() {
 		// 3. Return the adapter.
 		// We wrap the native 'e' instance in our EchoV5Adapter struct,
 		// which satisfies the Transwarp interface.
-		return &echoadapter.EchoV5Adapter{Instance: e}
+		return &echoadapter.EchoAdapter{Instance: e}
 	})
 }

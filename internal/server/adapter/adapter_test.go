@@ -24,6 +24,7 @@ import (
 	"github.com/profe-ajedrez/transwarp/internal/server/adapter/echoadapter"
 	"github.com/profe-ajedrez/transwarp/internal/server/adapter/fiberadapter"
 	"github.com/profe-ajedrez/transwarp/internal/server/adapter/ginadapter"
+	"github.com/profe-ajedrez/transwarp/internal/server/adapter/nativeadapter" // <--- NUEVO IMPORT
 )
 
 // testKey is used for context keys to avoid collisions during middleware testing.
@@ -35,30 +36,18 @@ const (
 
 // Executor defines the signature for a function that executes an HTTP request
 // against a specific adapter implementation.
-//
-// This abstraction allows the test suite to be agnostic of the underlying
-// execution model (e.g., ServeHTTP for Gin/Echo/Chi vs. direct client calls for Fiber).
 type Executor func(req *http.Request) *http.Response
 
-// TestAllAdapters is the main entry point for the integration test suite.
-//
-// Strategy:
-// 1. It iterates through all supported drivers (Gin, Echo, Fiber, Chi, Mock).
-// 2. For each driver, it initializes the specific engine and wraps it in the Transwarp adapter.
-// 3. It calls 'setupUniversalRoutes' to register a standardized set of routes.
-// 4. It defines a specific 'Executor' closure that knows how to send requests to that engine.
-// 5. It calls 'executeUniversalTests', running the exact same battery of assertions against all drivers.
 func TestAllAdapters(t *testing.T) {
 
 	// --- GIN ADAPTER TEST ---
 	t.Run("Gin", func(t *testing.T) {
-		gin.SetMode(gin.TestMode) // Suppress debug logs
+		gin.SetMode(gin.TestMode)
 		g := gin.New()
 		r := &ginadapter.GinAdapter{Router: g}
 
 		setupUniversalRoutes(r)
 
-		// Gin implements http.Handler, so we can use httptest.ResponseRecorder directly.
 		executeUniversalTests(t, r, func(req *http.Request) *http.Response {
 			rec := httptest.NewRecorder()
 			g.ServeHTTP(rec, req)
@@ -69,12 +58,10 @@ func TestAllAdapters(t *testing.T) {
 	// --- ECHO ADAPTER TEST ---
 	t.Run("EchoV5", func(t *testing.T) {
 		e := echo.New()
-		// e.HideBanner = true // Optional: clean logs
 		r := &echoadapter.EchoAdapter{Instance: e}
 
 		setupUniversalRoutes(r)
 
-		// Echo implements http.Handler.
 		executeUniversalTests(t, r, func(req *http.Request) *http.Response {
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
@@ -83,9 +70,6 @@ func TestAllAdapters(t *testing.T) {
 	})
 
 	// --- FIBER ADAPTER TEST ---
-	// Special Case: Fiber (v2/v3) does NOT implement http.Handler.
-	// It runs its own fasthttp server. Therefore, we must start a real TCP listener
-	// and make actual HTTP client requests.
 	t.Run("FiberV3", func(t *testing.T) {
 		app := fiber.New(fiber.Config{})
 		r := &fiberadapter.FiberAdapter{App: app, Router: app}
@@ -93,24 +77,18 @@ func TestAllAdapters(t *testing.T) {
 		setupUniversalRoutes(r)
 
 		port := ":9988"
-		// Start Fiber in a goroutine
 		go func() { _ = app.Listen(port) }()
-		time.Sleep(100 * time.Millisecond) // Give it time to bind port
+		time.Sleep(100 * time.Millisecond)
 
 		defer func() { _ = app.Shutdown() }()
 
 		executeUniversalTests(t, r, func(req *http.Request) *http.Response {
-			// Transform the request URL to point to the local TCP port
 			u := req.URL
 			u.Scheme = "http"
 			u.Host = "localhost" + port
 
-			// Clone the request to avoid mutating the original test definition
 			newReq, _ := http.NewRequest(req.Method, u.String(), req.Body)
 			newReq.Header = req.Header
-
-			// Important: Disable Keep-Alive to prevent connection exhaustion during
-			// rapid-fire tests (like the concurrency test).
 			newReq.Close = true
 
 			resp, err := http.DefaultClient.Do(newReq)
@@ -128,7 +106,6 @@ func TestAllAdapters(t *testing.T) {
 
 		setupUniversalRoutes(r)
 
-		// Chi implements http.Handler.
 		executeUniversalTests(t, r, func(req *http.Request) *http.Response {
 			rec := httptest.NewRecorder()
 			c.ServeHTTP(rec, req)
@@ -136,10 +113,24 @@ func TestAllAdapters(t *testing.T) {
 		})
 	})
 
+	// --- MUX ADAPTER TEST (Native Go 1.22) ---
+	// Este test valida el adaptador nativo que usa http.ServeMux mejorado
+	t.Run("MuxStandard", func(t *testing.T) {
+		// Inicializamos el nuevo adaptador
+		r := nativeadapter.New()
+
+		// Registramos las rutas (el adaptador traducirá :param a {param} internamente)
+		setupUniversalRoutes(r)
+
+		// Mux implementa http.Handler nativamente
+		executeUniversalTests(t, r, func(req *http.Request) *http.Response {
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			return rec.Result()
+		})
+	})
+
 	// --- MOCK ROUTER TEST ---
-	// This tests the internal Mock implementation used for unit testing.
-	// Since the MockRouter is a manual implementation, we must simulate the routing logic manually here
-	// to ensure the Mock behaves correctly when users use it.
 	t.Run("MockRouter", func(t *testing.T) {
 		m := adapter.NewMockRouter()
 		setupUniversalRoutes(m)
@@ -149,17 +140,14 @@ func TestAllAdapters(t *testing.T) {
 			method := req.Method
 			var key string
 
-			// 1. Thread-safe parameter storage for this request
 			currentParams := make(map[string]string)
 
-			// 2. Manual Routing Logic (Simulating what a real router does)
+			// Manual Routing Logic for Mock
 			switch {
-			// Basic Echo Route
 			case strings.HasPrefix(path, "/api/echo/"):
 				key = "GET /api/echo/:data"
 				currentParams["data"] = strings.TrimPrefix(path, "/api/echo/")
 
-			// Deeply Nested Param Route
 			case strings.HasPrefix(path, "/api/shop/category/"):
 				key = "GET /api/shop/category/:cat/item/:id"
 				p := strings.Split(path, "/")
@@ -167,7 +155,6 @@ func TestAllAdapters(t *testing.T) {
 					currentParams["cat"], currentParams["id"] = p[4], p[6]
 				}
 
-			// Method Specific Routes
 			case path == "/api/users" && method == "POST":
 				key = "POST /api/users"
 			case path == "/api/update" && method == "PUT":
@@ -176,7 +163,6 @@ func TestAllAdapters(t *testing.T) {
 				key = "DELETE /api/remove/:id"
 				currentParams["id"] = strings.TrimPrefix(path, "/api/remove/")
 
-			// Exact Matches
 			case path == "/api/secret":
 				key = "GET /api/secret"
 			case path == "/api/search":
@@ -184,18 +170,13 @@ func TestAllAdapters(t *testing.T) {
 			case path == "/api/admin/settings":
 				key = "GET /api/admin/settings"
 
-			// Dynamic Match
 			case strings.HasPrefix(path, "/api/admin/"):
 				key = "GET /api/admin/:any"
 				currentParams["any"] = strings.TrimPrefix(path, "/api/admin/")
 
-			// --- Firewall Test Route ---
 			case strings.HasPrefix(path, "/protected/"):
 				key = "GET /protected/dashboard"
-				// Note: query params are handled by the middleware registered in setupUniversalRoutes
 
-			// --- Collision Tests ---
-			// Specific route must be matched before generic prefix
 			case path == "/files/config":
 				key = "GET /files/config"
 
@@ -203,31 +184,24 @@ func TestAllAdapters(t *testing.T) {
 				key = "GET /files/:name"
 				currentParams["name"] = strings.TrimPrefix(path, "/files/")
 
-			case strings.HasPrefix(path, "/files/"):
-				key = "GET /files/:name"
-				currentParams["name"] = strings.TrimPrefix(path, "/files/")
-
-			// --- NUEVO CASO PARA MOCK ---
-			// Si la ruta es /universal, construimos la key usando el método actual
-			// Porque HandleFunc registró "GET /universal", "POST /universal", etc.
+			// Soporte para HandleFunc universal
 			case path == "/universal":
 				key = method + " /universal"
 
-			// Default: Exact path match fallback
+			case path == "/compliance/servehttp":
+				key = "GET /compliance/servehttp"
+
 			default:
 				key = method + " " + path
 			}
 
-			// Lookup the handler in the Mock's map
 			h, ok := m.Handlers[key]
 			if !ok {
-				// Debugging aid
+				// Fallback simple para coincidencia de prefijos en tests genéricos si es necesario
 				fmt.Printf("[Mock 404] Looking for key: '%s'. Original Path: '%s'\n", key, path)
 				return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("404"))}
 			}
 
-			// 3. Inject Context (Thread-safe)
-			// We inject the captured parameters into the request context so the Mock's Param() method can find them.
 			ctx := context.WithValue(req.Context(), adapter.MockParamsKey, currentParams)
 
 			rec := httptest.NewRecorder()
@@ -237,14 +211,9 @@ func TestAllAdapters(t *testing.T) {
 	})
 }
 
-// setupUniversalRoutes registers a comprehensive set of routes covering common scenarios:
-// - Global & Group Middleware
-// - URL Parameters & Query Params
-// - JSON Body Parsing
-// - Header Manipulation
-// - Deep Nesting
-// - Route Collision (Static vs Dynamic)
-// - Middleware Interruption (Firewall)
+// setupUniversalRoutes ... (El resto del archivo sigue igual)
+// Solo asegúrate de copiar la función setupUniversalRoutes y executeUniversalTests
+// que ya tenías en tu código original, no han cambiado.
 func setupUniversalRoutes(r internal.Router) {
 	// 1. Global Middleware: Injects a header into every response
 	r.Use(func(next http.Handler) http.Handler {
@@ -402,7 +371,6 @@ func setupUniversalRoutes(r internal.Router) {
 	})
 }
 
-// executeUniversalTests runs the battery of assertions using the provided Executor.
 func executeUniversalTests(t *testing.T, r internal.Router, executor Executor) {
 
 	// Helper to create simple requests
