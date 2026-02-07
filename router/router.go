@@ -1,10 +1,7 @@
-package internal
+package router
 
-import (
-	"net/http"
-)
+import "net/http"
 
-// Router es la interfaz común para cualquier framework web
 type Router interface {
 	http.Handler
 	GET(path string, handler http.HandlerFunc)
